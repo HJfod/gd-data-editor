@@ -1,10 +1,10 @@
-const { app, BrowserWindow, Menu } = require("electron");
+const { app, BrowserWindow, Menu, dialog } = require("electron");
 const fs = require("fs");
 const pako = require("pako");
 
 let w;
 app.on("ready", () => {
-    w = new BrowserWindow({ webPreferences: { nodeIntegration: true } });
+    w = new BrowserWindow({ webPreferences: { nodeIntegration: true, enableRemoteModule: true } });
     w.loadFile("index.html");
     Menu.setApplicationMenu(Menu.buildFromTemplate(temp))
     w.on("closed", () => { app.quit() });
@@ -36,6 +36,21 @@ const temp = [
                 accelerator: "alt+f4",
                 click: () => {
                     app.quit();
+                }
+            }
+        ]
+    },
+    {
+        label: "File",
+        submenu: [
+            {
+                label: "Import .gmd file",
+                accelerator: "ctrl+o",
+                click: () => {
+                    try {
+                        const d = dialog.showOpenDialogSync()[0].replace(/\\/g,"/");
+                        w.webContents.send("main", { action: "import-gmd", gmd: d });
+                    } catch(e) {}
                 }
             }
         ]

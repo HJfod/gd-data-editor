@@ -1,6 +1,7 @@
 const fs = require("fs");
 const pako = require("pako");
 const keys = require("./keys.json");
+const { dialog } = require("electron").remote;
 const ipc = require("electron").ipcRenderer;
 
 const global = {
@@ -33,7 +34,7 @@ function getCSS(v) {
 
 let startFiles = [];
 fs.readdirSync(global.ccloc).forEach(x => {
-    if (x === "CCLocalLevels.dat" || x === "CCGameManager.dat") {
+    if (x === "CCLocalLevels.dat" /* || x === "CCGameManager.dat" */ ) {
         startFiles.push(x);
     }
 });
@@ -70,58 +71,7 @@ startFiles.forEach(f => {
                             n = n.substring(0,n.indexOf("<")).replace(/'/g,'"');
                             
                             add(1, n, false, () => {
-                                lvl.match(/<k>(.*?)<\/k>/g).forEach(key => {
-                                    key = key.replace("<k>","").replace(/<\/k>+$/,"");
-                                    
-                                    if (keys.baseData[key]) {
-                                        if (typeof keys.baseData[key] === "object") {
-                                            add(2, keys.baseData[key].use, false, () => {
-                                                const objs = pako.inflate(Buffer.from(getKey(lvl, key, "s"), 'base64'), { to:"string" } ).toString("utf8").split(";")
-                                                
-                                                add(3, "StartData", false, () => {
-                                                    objs.slice(0,1).forEach(obj => {
-                                                        let keysv = [];
-                                                        let d = obj.split(",");
-                                                        for (let i = 0; i < d.length; i += 2) {
-                                                            keysv.push({ k: d[i], v: d[i+1]});
-                                                        }
-                                                        keysv.forEach(k => {
-                                                            if (typeof keys.baseData.k4.values[k.k] === "object") {
-                                                                add(4, keys.baseData.k4.values[k.k].use, false, () => {
-                                                                    add(5, k.v);
-                                                                }, "StartKeys");
-                                                            } else {
-                                                                add(4, keys.baseData.k4.values[k.k], false, () => {
-                                                                    add(5, k.v, true, null, "SKey Data", true);
-                                                                }, "StartKeys", "#0f0");
-                                                            }
-                                                        });
-                                                    });
-                                                }, "LevelData");
-
-                                                add(3, `Objects (${objs.slice(1,objs.length-1).length})`, false, () => {
-                                                    objs.slice(1,objs.length-1).forEach(obj => {
-                                                        add(4, obj, false, () => {
-                                                            add(5, obj, true, null, "Object Data");
-                                                        }, "Object", "#0f0");
-                                                    });
-                                                }, "LevelData");
-                                            });
-                                        } else {
-                                            add(2, keys.baseData[key].replace(/\#/g,"").replace(/\&/g,""), false, () => {
-                                                let k = getKey(lvl, key, null)[0];
-                                                let t = k.substring(k.indexOf(">") + 1,k.lastIndexOf("<"));
-                                                if (keys.baseData[key].includes("#")) {
-                                                    t = decodeBase64(t).toString("utf8");
-                                                }
-                                                if (keys.baseData[key].includes("&")) {
-                                                    t = pako.inflate(Buffer.from(t, 'base64'), { to:"string" } ).toString("utf8");
-                                                }
-                                                add(3, t, true, null, "Value");
-                                            }, "Key", "#0f0", key);
-                                        }
-                                    }
-                                });
+                                levelMenu(lvl);
                             }, "Level", null, lvl);
                         } else {
                             found = false;
@@ -151,9 +101,17 @@ startFiles.forEach(f => {
 ipc.on("main", (e, args) => {
     switch (args.action) {
         case "save-value":
-            setKey(document.querySelector('.selected[data-row="Level"]').getAttribute("data-sub"),
-            document.querySelector('.selected[data-row="Key"]').getAttribute("data-sub"),
-            document.querySelector("#value-editor").value);
+            const e = document.querySelector("#value-editor");
+            setKey(
+                JSON.parse(e.getAttribute("data-super")).level,
+                e.getAttribute("data-super").key,
+                e.value
+            );
+            break;
+        case "import-gmd":
+            add(0, args.gmd.split("/").pop(), false, () => {
+                levelMenu(fs.readFileSync(args.gmd).toString(), 1);
+            }, null, null, args.gmd);
             break;
         case "update":
             update();
@@ -277,4 +235,103 @@ function setKey(lvl, key, val, isObj = false) {
             status("apparently the level doesn't exist??");
         }
     }
+}
+
+function levelMenu(lvl, pos = 2) {
+    lvl.match(/<k>(.*?)<\/k>/g).forEach(key => {
+        key = key.replace("<k>","").replace(/<\/k>+$/,"");
+        
+        if (keys.baseData[key]) {
+            if (typeof keys.baseData[key] === "object") {
+                add(pos, keys.baseData[key].use, false, () => {
+                    const objs = pako.inflate(Buffer.from(getKey(lvl, key, "s"), 'base64'), { to:"string" } ).toString("utf8").split(";")
+                    
+                    add(pos+1, "StartData", false, () => {
+                        objs.slice(0,1).forEach(obj => {
+                            let keysv = [];
+                            let d = obj.split(",");
+                            for (let i = 0; i < d.length; i += 2) {
+                                keysv.push({ k: d[i], v: d[i+1]});
+                            }
+                            keysv.forEach(k => {
+                                if (typeof keys.baseData.k4.values[k.k] === "object") {
+                                    const colors = k.v.split("|")
+                                    colors.splice(-1,1);
+                                    add(pos+2, `${keys.baseData.k4.values[k.k].use} (${colors.length})`, false, () => {
+                                        colors.forEach(col => {
+                                            let coloo = col.split("_");
+                                            let colo = {};
+                                            for (let i = 0; i < coloo.length; i += 2) {
+                                                colo[coloo[i]] = coloo[i+1];
+                                            }
+                                            let coln = keys.baseData.k4.values.kS38.misc.ReservedIDs[colo["6"]];
+                                            add(pos+3, coln ? coln : colo["6"], false, () => {
+                                                Object.keys(colo).forEach(cc => {
+                                                    let ck = keys.baseData.k4.values.kS38.values[cc];
+                                                    add(pos+4, ck ? ck : cc, false, () => {
+                                                        add(pos+5, colo[cc], true, null, "CKey Data");
+                                                    }, "Color Key", "#0f0");
+                                                });
+                                                // add(6, col, true, null, "Color Data", null, );
+                                            }, "Color");
+                                        });
+                                    }, "Start Keys");
+                                } else {
+                                    add(pos+2, keys.baseData.k4.values[k.k], false, () => {
+                                        add(pos+3, k.v, true, null, "SKey Data");
+                                    }, "Start Keys", "#0f0");
+                                }
+                            });
+                        });
+                    }, "Level Data");
+                    
+                    add(pos+1, `Objects (${objs.slice(1,objs.length-1).length})`, false, () => {
+                        let ye = false;
+                        if (objs.slice(1,objs.length-1).length > 10000) {
+                            const d = dialog.showMessageBoxSync({
+                                title: "Warning",
+                                message: "There are a lot of objects in this level. Are you sure you want to do this?",
+                                buttons: [ "Yes", "Cancel" ]
+                            });
+                            if (d === 0) ye = true;
+                        } else {
+                            ye = true;
+                        }
+                        if (ye) {
+                            objs.slice(1,objs.length-1).forEach(obj => {
+                                add(pos+2, obj, false, () => {
+                                    let keysv = [];
+                                    let d = obj.split(",");
+                                    for (let i = 0; i < d.length; i += 2) {
+                                        keysv.push({ k: d[i], v: d[i+1]});
+                                    }
+                                    keysv.forEach(k => {
+                                        add(pos+3, keys.baseData.k4.values.objectsArray[k.k], false, () => {
+                                            add(pos+4, k.v, true, null, "OKey Value");
+                                        }, "Object Key", "#0f0");
+                                    });
+                                }, "Object");
+                            });
+                        }
+                    }, "Level Data");
+                });
+            } else {
+                add(pos, keys.baseData[key].replace(/\#/g,"").replace(/\&/g,""), false, () => {
+                    let k = getKey(lvl, key, null)[0];
+                    let t = k.substring(k.indexOf(">") + 1,k.lastIndexOf("<"));
+                    if (keys.baseData[key].includes("#")) {
+                        t = decodeBase64(t).toString("utf8");
+                    }
+                    if (keys.baseData[key].includes("&")) {
+                        t = pako.inflate(Buffer.from(t, 'base64'), { to:"string" } ).toString("utf8");
+                    }
+                    add(pos+1, t, true, null, "Value", null, null, {
+                        type: "lvlkey",
+                        level: lvl,
+                        key: key
+                    });
+                }, "Key", "#0f0", key);
+            }
+        }
+    });
 }
